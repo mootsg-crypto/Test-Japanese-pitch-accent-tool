@@ -1,0 +1,6 @@
+{
+  "name": "Kotonoha Pitch Accent",
+  "description": "Japanese pitch accent analyzer with mora pitch visualization, furigana/romaji toggles, dictionary lookup, and AI text translation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

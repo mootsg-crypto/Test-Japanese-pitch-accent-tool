@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+:root {
+  --dynamic-scale: 24px;
+}
+
+.font-japanese {
+  font-family: "Hiragino Sans", "Meiryo", "Yu Gothic", "Hiragino Kaku Gothic ProN", sans-serif;
+  font-size: var(--dynamic-scale);
+}
+
+/* Pitch Accent Lines */
+.pitch-high {
+  border-top: 2.5px solid #FAB917;
+}
+
+.pitch-low {
+  border-bottom: 2.5px solid #FAB917;
+}
+
+.pitch-drop {
+  border-right: 2.5px solid #FAB917;
+  border-top: 2.5px solid #FAB917;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #121414;
+}
+::-webkit-scrollbar-thumb {
+  background: #282a2b;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #333535;
+}
