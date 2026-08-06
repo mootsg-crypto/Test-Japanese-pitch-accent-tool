@@ -6,6 +6,7 @@ import { AnalysisOutput } from './components/AnalysisOutput';
 import { DictionaryView } from './components/DictionaryView';
 import { HistoryView } from './components/HistoryView';
 import { PitchQuizView } from './components/PitchQuizView';
+import { DisqusComments } from './components/DisqusComments';
 import { BottomNavBar, TabType } from './components/BottomNavBar';
 import { AnalysisResult, HistoryItem } from './types';
 import { offlineAnalyzeSentence } from './lib/pitchAnalyzer';
@@ -191,6 +192,9 @@ export default function App() {
 
         {/* Quiz Tab */}
         {activeTab === 'quiz' && <PitchQuizView />}
+
+        {/* Disqus Comment Section */}
+        <DisqusComments />
       </main>
 
       {/* Fixed Bottom Tab Navigation */}

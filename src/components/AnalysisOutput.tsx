@@ -293,9 +293,23 @@ export const AnalysisOutput: React.FC<AnalysisOutputProps> = ({
         </div>
       )}
 
+      {/* Pitch Rules Reference Banner */}
+      <div className="p-3 bg-[#121414] rounded-lg border border-[#282a2b] text-[11px] text-[#A1A1A1] flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-[#FAB917] font-mono font-bold">
+          <span>Tokyo Pitch Rules Applied:</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+          <span>1. 1st & 2nd morae differ (L-H or H-L)</span>
+          <span>•</span>
+          <span>2. Single pitch drop per word</span>
+          <span>•</span>
+          <span>3. Particles absorb preceding pitch</span>
+        </div>
+      </div>
+
       {/* Translation Section */}
       {translationMode === 'on' && result.translation && (
-        <div className="mt-4 pt-4 border-t border-dashed border-[#282a2b] text-[#A1A1A1] text-sm font-['Inter',sans-serif]">
+        <div className="pt-3 border-t border-dashed border-[#282a2b] text-[#A1A1A1] text-sm font-['Inter',sans-serif]">
           <strong className="text-[#e2e2e2] font-semibold mr-2">Translation:</strong>
           {result.translation}
         </div>

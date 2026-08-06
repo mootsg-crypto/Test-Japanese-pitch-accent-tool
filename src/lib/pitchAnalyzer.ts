@@ -23,34 +23,47 @@ export function splitToMorae(reading: string): string[] {
 }
 
 /**
- * Calculates mora pitches based on Tokyo Pitch Accent rules given accentPosition (0 = Heiban, 1 = Atamadaka, N = Nakadaka/Odaka)
+ * Calculates mora pitches based on standard Tokyo Pitch Accent rules:
+ * Rule 1: First and second mora of a word MUST be at different pitches (Low-High or High-Low).
+ * Rule 2: Each accented word has at most ONE pitch drop (at the accent nucleus position).
+ * Rule 3: Particles absorb the pitch profile of the preceding word.
  */
 export function calculateMoraPitches(moraeStrings: string[], accentPosition: number): Mora[] {
   const total = moraeStrings.length;
   if (total === 0) return [];
 
-  // Single mora words special case
+  // Single mora words (e.g. 歯, 木, 雨)
   if (total === 1) {
     if (accentPosition === 1) {
+      // Atamadaka [1] single mora drops immediately
       return [{ mora: moraeStrings[0], pitch: 'drop' }];
     } else {
+      // Heiban [0] single mora starts low in isolation or phrase-initial
       return [{ mora: moraeStrings[0], pitch: 'low' }];
     }
   }
 
+  // Multi-mora words:
   return moraeStrings.map((moraStr, index) => {
-    const pos = index + 1; // 1-indexed position
+    const pos = index + 1; // 1-indexed
 
-    if (accentPosition === 0) {
-      // Heiban (平板) [0]: 1st is low, 2nd and rest are high (no drop)
-      const pitch: PitchType = pos === 1 ? 'low' : 'high';
-      return { mora: moraStr, pitch };
-    } else if (accentPosition === 1) {
-      // Atamadaka (頭高) [1]: 1st is high with drop, rest are low
+    if (accentPosition === 1) {
+      // Atamadaka [1]: 1st is HIGH/DROP, 2nd & rest are LOW.
+      // Rule 1: 1st (high/drop) != 2nd (low)
+      // Rule 2: 1 drop at pos 1
       const pitch: PitchType = pos === 1 ? 'drop' : 'low';
       return { mora: moraStr, pitch };
+    } else if (accentPosition === 0) {
+      // Heiban [0]: 1st is LOW, 2nd and all rest are HIGH. No drop.
+      // Rule 1: 1st (low) != 2nd (high)
+      // Rule 2: 0 drops
+      const pitch: PitchType = pos === 1 ? 'low' : 'high';
+      return { mora: moraStr, pitch };
     } else {
-      // Nakadaka (中高) [N] or Odaka (尾高) [N]
+      // Nakadaka [N] or Odaka [N] (where N >= 2):
+      // 1st is LOW. 2nd up to (N-1) are HIGH. N-th is DROP. (N+1) and rest are LOW.
+      // Rule 1: 1st (low) != 2nd (high)
+      // Rule 2: Exactly 1 drop at N-th mora.
       if (pos === 1) {
         return { mora: moraStr, pitch: 'low' };
       } else if (pos < accentPosition) {
@@ -61,6 +74,72 @@ export function calculateMoraPitches(moraeStrings: string[], accentPosition: num
         return { mora: moraStr, pitch: 'low' };
       }
     }
+  });
+}
+
+/**
+ * Particle Pitch Absorption Engine (Rule 3)
+ * Adjusts particle pitches based on the preceding word's accent pattern:
+ * - If preceding word is Heiban [0]: particle stays HIGH (absorbing the unaccented flat high pitch).
+ * - If preceding word is Atamadaka [1]: particle is LOW (since pitch dropped on 1st mora).
+ * - If preceding word is Nakadaka [N]: particle is LOW (since pitch dropped at N-th mora).
+ * - If preceding word is Odaka [N]: particle is LOW (since pitch dropped after N-th mora).
+ */
+export function processParticlePitches(tokens: Token[]): Token[] {
+  const particles = new Set([
+    'は', 'が', 'を', 'に', 'で', 'と', 'へ', 'の', 'も', 'から',
+    'まで', 'より', 'か', 'ね', 'よ', 'な', 'ば', 'ぞ', 'ぜ', 'さ',
+    'ハ', 'ガ', 'ヲ', 'ニ', 'デ', 'ト', 'ヘ', 'ノ', 'モ', 'カラ', 'マデ'
+  ]);
+
+  let precedingAccentPosition: number | null = null;
+  let precedingAccentType: AccentCategory | null = null;
+  let precedingLastPitch: PitchType | null = null;
+
+  return tokens.map((token) => {
+    if (token.isPunctuation) {
+      precedingAccentPosition = null;
+      precedingAccentType = null;
+      precedingLastPitch = null;
+      return token;
+    }
+
+    const isParticle =
+      token.accentType === 'Particle' ||
+      (particles.has(token.surface) && token.morae.length <= 2);
+
+    if (isParticle && precedingAccentPosition !== null) {
+      // Rule 3: Particle absorbs pitch of preceding word
+      let particlePitch: PitchType = 'low';
+
+      if (precedingAccentType === 'Heiban' || precedingAccentPosition === 0) {
+        // Preceding word was Heiban: particle stays HIGH
+        particlePitch = 'high';
+      } else {
+        // Preceding word was Atamadaka, Nakadaka, or Odaka: particle is LOW
+        particlePitch = 'low';
+      }
+
+      const updatedMorae: Mora[] = token.morae.map((m) => ({
+        ...m,
+        pitch: particlePitch,
+      }));
+
+      return {
+        ...token,
+        accentType: 'Particle',
+        morae: updatedMorae.length > 0 ? updatedMorae : [{ mora: token.surface, pitch: particlePitch }],
+      };
+    }
+
+    // Update preceding word context
+    precedingAccentPosition = token.accentPosition;
+    precedingAccentType = token.accentType;
+    if (token.morae && token.morae.length > 0) {
+      precedingLastPitch = token.morae[token.morae.length - 1].pitch;
+    }
+
+    return token;
   });
 }
 
@@ -421,70 +500,140 @@ export const DICTIONARY_DATABASE: DictionaryEntry[] = [
 ];
 
 /**
+ * Sanitizes and validates any list of tokens to strictly satisfy Tokyo pitch accent rules:
+ * Rule 1: The first and second mora of a word must be at different pitches.
+ * Rule 2: Each accented word has at most ONE pitch drop.
+ * Rule 3: Particles absorb the pitch profile of the preceding word.
+ */
+export function validateAndSanitizeTokens(tokens: Token[]): Token[] {
+  // Step A: Sanitize individual word tokens (Rules 1 & 2)
+  const sanitizedWords = tokens.map((token) => {
+    if (token.isPunctuation || !token.morae || token.morae.length === 0) {
+      return token;
+    }
+
+    const morae = token.morae.map((m) => ({ ...m }));
+    const total = morae.length;
+
+    if (total <= 1) {
+      return token;
+    }
+
+    // Rule 2: Each accented word has at most ONE pitch drop.
+    let dropIndex = -1;
+    for (let i = 0; i < total; i++) {
+      if (morae[i].pitch === 'drop') {
+        if (dropIndex === -1) {
+          dropIndex = i;
+        } else {
+          // Extra drop found! Convert to 'low'
+          morae[i].pitch = 'low';
+        }
+      }
+    }
+
+    // After a pitch drop, all subsequent morae MUST be low
+    if (dropIndex !== -1) {
+      for (let i = dropIndex + 1; i < total; i++) {
+        morae[i].pitch = 'low';
+      }
+    }
+
+    // Rule 1: First and second mora MUST be at different pitches.
+    // In Tokyo pitch accent:
+    // If mora 0 is 'drop' or 'high', mora 1 MUST be 'low'.
+    // If mora 0 is 'low', mora 1 MUST be 'high' or 'drop'.
+    const firstIsHigh = morae[0].pitch === 'high' || morae[0].pitch === 'drop';
+    const secondIsHigh = morae[1].pitch === 'high' || morae[1].pitch === 'drop';
+
+    if (firstIsHigh && secondIsHigh) {
+      // Both high: invalid! 1st must be 'drop', 2nd must be 'low' (Atamadaka pattern)
+      morae[0].pitch = 'drop';
+      morae[1].pitch = 'low';
+      for (let i = 2; i < total; i++) morae[i].pitch = 'low';
+    } else if (!firstIsHigh && !secondIsHigh) {
+      // Both low: invalid! 1st must be 'low', 2nd must be 'high' or 'drop' (Heiban / Nakadaka / Odaka)
+      morae[0].pitch = 'low';
+      morae[1].pitch = token.accentPosition === 2 ? 'drop' : 'high';
+    }
+
+    return {
+      ...token,
+      morae,
+    };
+  });
+
+  // Step B: Apply Particle Absorption Rule (Rule 3)
+  return processParticlePitches(sanitizedWords);
+}
+
+/**
  * Basic Rule-Based Offline Parser for sentence tokenization & pitch assignment
  */
 export function offlineAnalyzeSentence(text: string, breakOnSpaces: boolean): { tokens: Token[]; translation: string } {
   // Check exact mockup sentence default
   if (text.trim() === '今日、どんなこと学びたい？' || text.trim() === '今日どんなこと学びたい') {
+    const rawTokens: Token[] = [
+      {
+        surface: '今 日',
+        reading: 'キョー',
+        romaji: 'kyō',
+        accentType: 'Atamadaka',
+        accentPosition: 1,
+        morae: [{ mora: '今', pitch: 'drop' }, { mora: '日', pitch: 'low' }]
+      },
+      {
+        surface: '、',
+        reading: '、',
+        romaji: '',
+        accentType: 'Punctuation',
+        accentPosition: 0,
+        morae: [],
+        isPunctuation: true
+      },
+      {
+        surface: 'ど ん な',
+        reading: 'ドンナ',
+        romaji: 'donna',
+        accentType: 'Atamadaka',
+        accentPosition: 1,
+        morae: [{ mora: 'ど', pitch: 'drop' }, { mora: 'ん', pitch: 'low' }, { mora: 'な', pitch: 'low' }]
+      },
+      {
+        surface: 'こ と',
+        reading: 'コト',
+        romaji: 'koto',
+        accentType: 'Heiban',
+        accentPosition: 0,
+        morae: [{ mora: 'こ', pitch: 'low' }, { mora: 'と', pitch: 'high' }]
+      },
+      {
+        surface: '学 び た い',
+        reading: 'マナビタイ',
+        romaji: 'manabitai',
+        accentType: 'Nakadaka',
+        accentPosition: 4,
+        morae: [{ mora: '学', pitch: 'low' }, { mora: 'び', pitch: 'high' }, { mora: 'た', pitch: 'high' }, { mora: 'い', pitch: 'drop' }]
+      },
+      {
+        surface: '？',
+        reading: '？',
+        romaji: '',
+        accentType: 'Punctuation',
+        accentPosition: 0,
+        morae: [],
+        isPunctuation: true
+      }
+    ];
+
     return {
-      tokens: [
-        {
-          surface: '今 日',
-          reading: 'キョー',
-          romaji: 'kyō',
-          accentType: 'Atamadaka',
-          accentPosition: 1,
-          morae: [{ mora: '今', pitch: 'drop' }, { mora: '日', pitch: 'low' }]
-        },
-        {
-          surface: '、',
-          reading: '、',
-          romaji: '',
-          accentType: 'Punctuation',
-          accentPosition: 0,
-          morae: [],
-          isPunctuation: true
-        },
-        {
-          surface: 'ど ん な',
-          reading: 'ドンナ',
-          romaji: 'donna',
-          accentType: 'Atamadaka',
-          accentPosition: 1,
-          morae: [{ mora: 'ど', pitch: 'drop' }, { mora: 'ん', pitch: 'low' }, { mora: 'な', pitch: 'low' }]
-        },
-        {
-          surface: 'こ と',
-          reading: 'コト',
-          romaji: 'koto',
-          accentType: 'Heiban',
-          accentPosition: 0,
-          morae: [{ mora: 'こ', pitch: 'low' }, { mora: 'と', pitch: 'high' }]
-        },
-        {
-          surface: '学 び た い',
-          reading: 'マナビタイ',
-          romaji: 'manabitai',
-          accentType: 'Nakadaka',
-          accentPosition: 4,
-          morae: [{ mora: '学', pitch: 'low' }, { mora: 'び', pitch: 'high' }, { mora: 'た', pitch: 'high' }, { mora: 'い', pitch: 'drop' }]
-        },
-        {
-          surface: '？',
-          reading: '？',
-          romaji: '',
-          accentType: 'Punctuation',
-          accentPosition: 0,
-          morae: [],
-          isPunctuation: true
-        }
-      ],
+      tokens: validateAndSanitizeTokens(rawTokens),
       translation: 'What do you want to learn today?'
     };
   }
 
   // Tokenize using dictionary lookup or simple splitting logic
-  const tokens: Token[] = [];
+  const rawTokens: Token[] = [];
   const rawSegments = breakOnSpaces ? text.split(/\s+/) : [text];
 
   for (const segment of rawSegments) {
@@ -496,7 +645,7 @@ export function offlineAnalyzeSentence(text: string, breakOnSpaces: boolean): { 
 
     for (const part of parts) {
       if (/^[、。！？\?\!\,\.\s]+$/.test(part)) {
-        tokens.push({
+        rawTokens.push({
           surface: part,
           reading: part,
           romaji: '',
@@ -511,7 +660,7 @@ export function offlineAnalyzeSentence(text: string, breakOnSpaces: boolean): { 
       // Check dictionary match
       const matchedDict = DICTIONARY_DATABASE.find(d => d.word === part || d.reading === part);
       if (matchedDict) {
-        tokens.push({
+        rawTokens.push({
           surface: matchedDict.word,
           reading: matchedDict.reading,
           romaji: matchedDict.romaji,
@@ -526,7 +675,7 @@ export function offlineAnalyzeSentence(text: string, breakOnSpaces: boolean): { 
         // Default to Heiban [0] for unknown words offline
         const morae = calculateMoraPitches(moraeStrings, 0);
 
-        tokens.push({
+        rawTokens.push({
           surface: part,
           reading: part,
           romaji,
@@ -539,7 +688,7 @@ export function offlineAnalyzeSentence(text: string, breakOnSpaces: boolean): { 
   }
 
   return {
-    tokens,
+    tokens: validateAndSanitizeTokens(rawTokens),
     translation: 'Japanese pitch accent analysis'
   };
 }

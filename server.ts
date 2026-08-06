@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
-import { offlineAnalyzeSentence, DICTIONARY_DATABASE } from './src/lib/pitchAnalyzer';
+import { offlineAnalyzeSentence, DICTIONARY_DATABASE, validateAndSanitizeTokens } from './src/lib/pitchAnalyzer';
 
 const app = express();
 const PORT = 3000;
@@ -43,20 +43,19 @@ app.post('/api/analyze', async (req, res) => {
 
   if (ai) {
     try {
-      const prompt = `You are an expert Japanese linguist and phonetics system specializing in Standard Tokyo Pitch Accent (東京方言アクセント).
-Analyze the following Japanese text sentence or words: "${text.trim()}".
-Break down the text into words/morae tokens with high accuracy, indicating Tokyo pitch accent rules (Heiban [0], Atamadaka [1], Nakadaka [N], Odaka [N], Particle, or Punctuation).
+      const prompt = `You are an expert Japanese linguist specializing in Standard Tokyo Pitch Accent (東京方言アクセント).
+Analyze the following Japanese text: "${text.trim()}".
+Break down the text into tokens following these 3 MANDATORY TOKYO PITCH ACCENT RULES:
+1. RULE 1: The first and second mora of a word MUST be at different pitches (Low-High or High-Low). They can NEVER be both Low or both High.
+2. RULE 2: Each accented word has at most ONE pitch drop (the accent nucleus). After a drop, all subsequent morae in the word stay Low.
+3. RULE 3: Particles (ga, ni, no, o, wa, e, de, to, ka, mo, etc.) absorb the pitch profile of the preceding word:
+   - If preceding word is Heiban [0] (unaccented), the particle is HIGH.
+   - If preceding word is Atamadaka [1], Nakadaka [N], or Odaka [N], the particle is LOW.
 
 For each mora, assign its pitch pattern:
 - "low": Pitch is low
 - "high": Pitch is high
-- "drop": Pitch is high AND drops immediately after this mora (the accent nucleus / アクセント核)
-
-Also provide:
-1. Katakana/Hiragana reading for each word.
-2. Hepburn Romaji for each word.
-3. Natural English sentence translation.
-4. Accent position number (0 for Heiban, 1 for Atamadaka, or index N for Nakadaka/Odaka drop point).
+- "drop": Pitch is high AND drops immediately after this mora (the accent nucleus)
 
 Return JSON matching the schema precisely.`;
 
@@ -141,9 +140,10 @@ Return JSON matching the schema precisely.`;
       const responseText = response.text;
       if (responseText) {
         const parsed = JSON.parse(responseText);
+        const sanitizedTokens = validateAndSanitizeTokens(parsed.tokens || []);
         res.json({
           originalText: text,
-          tokens: parsed.tokens,
+          tokens: sanitizedTokens,
           translation: parsed.translation,
           romaji: parsed.romaji,
           reading: parsed.reading,
