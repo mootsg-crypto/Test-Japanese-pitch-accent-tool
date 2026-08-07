@@ -26,18 +26,23 @@ export const AnalysisOutput: React.FC<AnalysisOutputProps> = ({
   const [hoveredTokenIndex, setHoveredTokenIndex] = useState<number | null>(null);
 
   const handlePlaySpeech = () => {
-    if (!('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
+    try {
+      if (!('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
 
-    setIsPlayingAudio(true);
-    const utterance = new SpeechSynthesisUtterance(result.originalText);
-    utterance.lang = 'ja-JP';
-    utterance.rate = 0.9;
+      setIsPlayingAudio(true);
+      const utterance = new SpeechSynthesisUtterance(result.originalText);
+      utterance.lang = 'ja-JP';
+      utterance.rate = 0.9;
 
-    utterance.onend = () => setIsPlayingAudio(false);
-    utterance.onerror = () => setIsPlayingAudio(false);
+      utterance.onend = () => setIsPlayingAudio(false);
+      utterance.onerror = () => setIsPlayingAudio(false);
 
-    window.speechSynthesis.speak(utterance);
+      window.speechSynthesis.speak(utterance);
+    } catch (e) {
+      console.warn('Speech synthesis error:', e);
+      setIsPlayingAudio(false);
+    }
   };
 
   const handleCopy = () => {
